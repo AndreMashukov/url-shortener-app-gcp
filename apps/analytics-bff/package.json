@@ -1,0 +1,24 @@
+{
+  "name": "@usgcp/analytics-bff",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "start": "node ./src/index.js",
+    "build": "tsc -p ."
+  },
+  "dependencies": {
+    "@usgcp/events": "file:../libs/events",
+    "@usgcp/auth": "file:../libs/auth",
+    "@usgcp/firestore": "file:../libs/firestore",
+    "@usgcp/pubsub": "file:../libs/pubsub",
+    "@usgcp/http": "file:../libs/http",
+    "@usgcp/proto-decode": "file:../libs/proto-decode",
+    "hono": "^4.4.0",
+    "@google-cloud/firestore": "^7.9.0",
+    "@google-cloud/pubsub": "^4.7.0",
+    "firebase-admin": "^12.2.0",
+    "nanoid": "^5.0.7"
+  }
+}

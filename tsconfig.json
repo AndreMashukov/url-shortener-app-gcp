@@ -1,0 +1,35 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "./libs/events"
+    },
+    {
+      "path": "./libs/auth"
+    },
+    {
+      "path": "./libs/firestore"
+    },
+    {
+      "path": "./libs/pubsub"
+    },
+    {
+      "path": "./libs/http"
+    },
+    {
+      "path": "./libs/proto-decode"
+    },
+    {
+      "path": "./apps/event-hub"
+    },
+    {
+      "path": "./apps/app-bff"
+    },
+    {
+      "path": "./apps/redirect-bff"
+    },
+    {
+      "path": "./apps/analytics-bff"
+    }
+  ]
+}
