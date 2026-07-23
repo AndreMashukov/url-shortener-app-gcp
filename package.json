@@ -1,0 +1,40 @@
+{
+  "name": "url-shortener-app-gcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "GCP port of the AWS url-shortener-app (Cloud Run v2 + Firestore + Eventarc + Pub/Sub).",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "workspaces": [
+    "apps/*",
+    "libs/*"
+  ],
+  "scripts": {
+    "typecheck": "tsc -b --noEmit",
+    "test": "echo 'no tests yet (v1)' && exit 0",
+    "build:docker:app-bff": "docker build -t app-bff ./apps/app-bff",
+    "build:docker:redirect-bff": "docker build -t redirect-bff ./apps/redirect-bff",
+    "build:docker:analytics-bff": "docker build -t analytics-bff ./apps/analytics-bff",
+    "build:docker:all": "npm run build:docker:app-bff && npm run build:docker:redirect-bff && npm run build:docker:analytics-bff",
+    "push:images:dev": "echo 'placeholder; configure repo per env'",
+    "show:projects": "nx show projects",
+    "graph": "nx graph"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "nx": "^17.3.0",
+    "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "@google-cloud/firestore": "^7.9.0",
+    "@google-cloud/pubsub": "^4.7.0",
+    "@google-cloud/secret-manager": "^4.2.0",
+    "firebase-admin": "^12.2.0",
+    "hono": "^4.4.0",
+    "jose": "^5.6.0",
+    "nanoid": "^5.0.7",
+    "zod": "^3.23.0"
+  }
+}
