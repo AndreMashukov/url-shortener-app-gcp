@@ -214,9 +214,8 @@ redirect-bff Eventarc listener (Pub/Sub → Cloud Run)
   → 200 ack
 
 analytics-bff Eventarc listener (Pub/Sub → Cloud Run)
-  → on `mapping.created`: upsert `clicks/{code}` seed
-      `{ code, ownerUid, count: 0, lastClickedAt: null }` (idempotent)
-  → (also consumes `click.recorded` in flow B)```
+  → ignores `mapping.created` (AWS parity: no analytics seed on create)
+```
 
 ### B. Click + analytics
 
@@ -229,7 +228,9 @@ client → GET /{code} (anonymous)
     → 302 Location: <longUrl>
 
 analytics-bff Eventarc listener
-  → upsert `clicks/{code}` with `{ count: increment(1), lastClickedAt, ownerUid }`
+  → on first `click.recorded`: create `clicks/{code}` with
+      `{ code, ownerUid, count: 1, lastClickAt }`
+  → on later clicks: atomic increment + update lastClickAt
   → 200 ack
 ```
 
@@ -240,8 +241,9 @@ client → GET /analytics/{code} (Identity Platform JWT; owner = clicks.ownerUid
   analytics-bff Cloud Run
     → verify JWT, extract uid
     → read clicks/{code} from analytics-db only
-    → 403 if missing or ownerUid != uid
-    → 200 { code, clicks, lastClickedAt }
+    → 404 if missing (no clicks yet)
+    → 403 if ownerUid != uid
+    → 200 { code, ownerUid, count, lastClickAt }
 ```
 
 This is structurally identical to the AWS design, with two GCP-specific

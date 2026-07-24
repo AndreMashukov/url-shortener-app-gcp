@@ -3,22 +3,29 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "./src/index.ts",
+  "main": "./dist/index.js",
   "scripts": {
-    "start": "node ./src/index.js",
+    "start": "node ./dist/index.js",
     "build": "tsc -p ."
   },
   "dependencies": {
-    "@usgcp/events": "file:../libs/events",
-    "@usgcp/auth": "file:../libs/auth",
-    "@usgcp/firestore": "file:../libs/firestore",
-    "@usgcp/pubsub": "file:../libs/pubsub",
-    "@usgcp/http": "file:../libs/http",
-    "@usgcp/proto-decode": "file:../libs/proto-decode",
+    "@usgcp/events": "file:../../libs/events",
+    "@usgcp/auth": "file:../../libs/auth",
+    "@usgcp/firestore": "file:../../libs/firestore",
+    "@usgcp/pubsub": "file:../../libs/pubsub",
+    "@usgcp/http": "file:../../libs/http",
+    "@usgcp/proto-decode": "file:../../libs/proto-decode",
     "hono": "^4.4.0",
     "@google-cloud/firestore": "^7.9.0",
     "@google-cloud/pubsub": "^4.7.0",
     "firebase-admin": "^12.2.0",
-    "nanoid": "^5.0.7"
+    "nanoid": "^5.0.7",
+    "@hono/node-server": "^1.11.0",
+    "zod": "^3.23.0",
+    "jose": "^5.6.0"
+  },
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
   }
 }
