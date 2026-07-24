@@ -1,0 +1,34 @@
+{
+  "name": "analytics-bff",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/analytics-bff/src",
+  "projectType": "application",
+  "tags": ["type:app", "scope:bff", "scope:analytics"],
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "outputs": ["{projectRoot}/dist"],
+      "options": {
+        "cwd": "{projectRoot}",
+        "command": "tsc -p ."
+      },
+      "dependsOn": ["^build"]
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "{projectRoot}",
+        "command": "tsc -p . --noEmit"
+      },
+      "dependsOn": ["^build"]
+    },
+    "deploy": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build"],
+      "options": {
+        "cwd": "{workspaceRoot}",
+        "command": "bash scripts/deploy-bff.sh analytics-bff"
+      }
+    }
+  }
+}
