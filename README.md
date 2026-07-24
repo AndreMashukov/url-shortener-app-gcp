@@ -146,9 +146,9 @@ Local (ADC + smoke header):
 SMOKE_TEST_KEY=dev-smoke-key-change-me ./scripts/smoke-bff.sh
 ```
 
-Or from Google Cloud Shell, see [`E2E-CLOUD-SHELL.md`](./E2E-CLOUD-SHELL.md)
-if present / follow the same flow with
-`gcloud auth print-identity-token` + `X-Smoke-Test`.
+From Google Cloud Shell, use the same flow with
+`gcloud auth print-identity-token` + `X-Smoke-Test` (Cloud Run needs an
+identity token, not an opaque access token).
 
 Expected path:
 
