@@ -17,7 +17,7 @@
 
 import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
-import { getFirestore, getDoc, upsertDoc, incrementField } from '@usgcp/firestore';
+import { getFirestore, getDoc, incrementOrCreate } from '@usgcp/firestore';
 import { resolveUid } from '@usgcp/auth';
 import { errorResponse, jsonError } from '@usgcp/http';
 
@@ -140,17 +140,13 @@ async function handleBusEvent(body: any): Promise<BusResult> {
   if (eventType === 'click.recorded') {
     const lastClickAt = (eventData.clickedAt as string | undefined)
       ?? new Date().toISOString();
-    try {
-      await incrementField(clicksCollection, code, 'count', 1);
-      await upsertDoc(clicksCollection, code, { lastClickAt });
-    } catch {
-      await upsertDoc(clicksCollection, code, {
-        code,
-        ownerUid,
-        count: 1,
-        lastClickAt,
-      });
-    }
+    // Atomic create-or-increment: never reset an existing count on
+    // transient errors (narrow catch / merge+increment).
+    await incrementOrCreate(clicksCollection, code, 'count', 1, {
+      code,
+      ownerUid,
+      lastClickAt,
+    });
     return { ack: true, incremented: code };
   }
 

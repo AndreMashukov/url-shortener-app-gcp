@@ -15,7 +15,7 @@
 import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
 import { nanoid } from 'nanoid';
-import { getFirestore, upsertDoc } from '@usgcp/firestore';
+import { getFirestore, createDoc, isAlreadyExistsError } from '@usgcp/firestore';
 import { resolveUid } from '@usgcp/auth';
 import { publishEvent } from '@usgcp/pubsub';
 import { errorResponse, jsonError } from '@usgcp/http';
@@ -25,7 +25,11 @@ const projectId = process.env.GCP_PROJECT_ID ?? process.env.GOOGLE_CLOUD_PROJECT
 const topicName = process.env.EVENTHUB_TOPIC ?? 'url-shortener-events';
 
 const ShortenBody = z.object({
-  longUrl: z.string().url().max(2048),
+  // Only http(s) — longUrl is later used as a redirect Location.
+  longUrl: z.string().url().max(2048).refine(
+    (v) => /^https?:\/\//i.test(v),
+    { message: 'longUrl must use http or https' },
+  ),
   // Optional: caller may supply their own code. If absent, we generate.
   code: z.string().min(3).max(64).regex(/^[a-zA-Z0-9_-]+$/).optional(),
 });
@@ -79,26 +83,26 @@ app.post('/shorten', async (c) => {
     return errorResponse(400, 'invalid_body', String(err));
   }
 
-  // 3. Generate code if absent. Reject if collision.
+  // 3. Generate code if absent. Atomic create — no check-then-set race.
   const code = body.code ?? nanoid(8);
-  const db = getFirestore({ databaseId: 'app-db' });
-  const ref = db.doc(`mappings/${code}`);
-  const existing = await ref.get();
-  if (existing.exists) {
-    return errorResponse(409, 'code_taken', `code ${code} already exists`);
-  }
-
-  // 4. Write to Firestore.
-  await upsertDoc(
-    { database: 'app-db', collection: 'mappings' },
-    code,
-    {
+  getFirestore({ databaseId: 'app-db' });
+  try {
+    await createDoc(
+      { database: 'app-db', collection: 'mappings' },
       code,
-      longUrl: body.longUrl,
-      ownerUid: uid,
-      createdAt: new Date().toISOString(),
-    },
-  );
+      {
+        code,
+        longUrl: body.longUrl,
+        ownerUid: uid,
+        createdAt: new Date().toISOString(),
+      },
+    );
+  } catch (err) {
+    if (isAlreadyExistsError(err)) {
+      return errorResponse(409, 'code_taken', `code ${code} already exists`);
+    }
+    throw err;
+  }
 
   // 5. Also publish mapping.created directly. The Eventarc Firestore
   //    trigger should be the sole producer (per BRAINSTORM §1), but
