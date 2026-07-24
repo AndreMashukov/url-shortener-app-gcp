@@ -74,7 +74,7 @@ variable "memory_limit" {
 variable "allow_unauthenticated" {
   type        = bool
   default     = false
-  description = "If true, service is invocable by allUsers (use only for redirect-bff)"
+  description = "If true, roles/run.invoker is granted to allUsers (JWT/auth still enforced in the app handler for app-bff/analytics-bff)"
 }
 
 variable "invoker_members" {
@@ -116,21 +116,6 @@ variable "events_topic_id" {
 variable "events_topic_name" {
   type        = string
   description = "Short topic name (used in subscription name)"
-}
-
-variable "dlq_topic_id" {
-  type        = string
-  description = "Full DLQ topic id (events with N retries go here)"
-}
-
-variable "eventhub_publisher_sa_email" {
-  type        = string
-  description = "Email of the event-hub publisher SA (publisher SA gets pubsub.publisher on this BFF's writes)"
-}
-
-variable "eventhub_subscriber_sa_email" {
-  type        = string
-  description = "Email of the event-hub subscriber SA"
 }
 
 # Bus consumer toggle: does this BFF consume `mapping.created` and/or
@@ -286,11 +271,13 @@ resource "google_project_iam_member" "runtime_secret_accessor" {
   member  = google_service_account.runtime.member
 }
 
-# Pub/Sub publisher — only redirect-bff needs this (click.recorded)
-# App-bff does NOT publish (sole-producer rule)
-# Analytics-bff does NOT publish
+# Pub/Sub publisher on the runtime SA:
+#   - redirect-bff: click.recorded from the HTTP handler (documented exception)
+#   - app-bff: mapping.created from the Firestore Eventarc handler (and the
+#     temporary HTTP fallback publish until the trigger path is sole-source)
+# Analytics-bff never publishes.
 resource "google_project_iam_member" "runtime_pubsub_publisher" {
-  count   = contains(["redirect-bff"], var.service_name) ? 1 : 0
+  count   = contains(["redirect-bff", "app-bff"], var.service_name) ? 1 : 0
   project = var.project_id
   role    = "roles/pubsub.publisher"
   member  = google_service_account.runtime.member
@@ -386,20 +373,15 @@ resource "google_cloud_run_v2_service" "this" {
 }
 
 # IAM: who can invoke the service.
-data "google_iam_policy" "no_auth" {
-  count = var.allow_unauthenticated ? 1 : 0
-  binding {
-    role    = "roles/run.invoker"
-    members = ["allUsers"]
-  }
-}
-
-resource "google_cloud_run_v2_service_iam_policy" "no_auth" {
-  count       = var.allow_unauthenticated ? 1 : 0
-  project     = var.project_id
-  name        = google_cloud_run_v2_service.this.name
-  location    = var.region
-  policy_data = data.google_iam_policy.no_auth[0].policy_data
+# Use iam_member (additive) only — never mix with iam_policy (authoritative),
+# or Eventarc/specific invoker bindings get wiped when allow_unauthenticated flips.
+resource "google_cloud_run_v2_service_iam_member" "public_invoker" {
+  count    = var.allow_unauthenticated ? 1 : 0
+  project  = var.project_id
+  name     = google_cloud_run_v2_service.this.name
+  location = var.region
+  role     = "roles/run.invoker"
+  member   = "allUsers"
 }
 
 resource "google_cloud_run_v2_service_iam_member" "specific_invokers" {

@@ -52,9 +52,12 @@ variable "common_env_vars" {
 # Smoke-test bypass key. When non-empty, the libs/auth `X-Smoke-Test`
 # header (matching this value) is accepted as a Bearer-equivalent and
 # the caller is treated as uid=smoke-test-user. ONLY for dev/smoke.
-# Leave empty in staging/prod so the bypass never engages.
+#
+# Provide via terraform.tfvars (gitignored) or TF_VAR_smoke_test_key.
+# Stored in Secret Manager and injected as SMOKE_TEST_KEY secret env.
+# Leave empty / omit secret wiring in staging/prod so the bypass never engages.
 variable "smoke_test_key" {
   type        = string
-  default     = "dev-smoke-key-change-me"
-  description = "If non-empty, BFFs accept X-Smoke-Test matching this value (uid=smoke-test-user). Dev only."
+  sensitive   = true
+  description = "Dev-only X-Smoke-Test bypass value. Set in terraform.tfvars — no default."
 }

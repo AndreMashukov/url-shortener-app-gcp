@@ -110,9 +110,12 @@ resource "google_pubsub_topic_iam_member" "subscriber" {
 }
 
 # ---------- DLQ catch-all subscription ----------
-# Anything that nacks into the DLQ ends up here. No consumers; the
-# topic is the audit trail. Operators drain manually with `gcloud
-# pubsub subscriptions pull`.
+# Audit trail for messages that land on the DLQ topic. Eventarc-managed
+# transport subscriptions are NOT yet attached to this DLQ in Terraform
+# (Eventarc creates those subs; wiring dead_letter_policy onto them is a
+# follow-up). Until then, drain this catch-all after any manual / future
+# publisher-side DLQ publishes:
+#   gcloud pubsub subscriptions pull url-shortener-events-dlq-catchall
 resource "google_pubsub_subscription" "dlq_catch_all" {
   project = var.project_id
   name    = "${var.dlq_topic_name}-catchall"

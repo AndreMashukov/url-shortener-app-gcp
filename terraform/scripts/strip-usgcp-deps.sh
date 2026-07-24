@@ -1,20 +1,24 @@
 #!/bin/sh
 # Strip @usgcp/* deps from a package.json so npm install doesn't fail
-# on unresolved file: paths.
+# on unresolved file: paths. Preserve all other manifest fields.
 node -e '
   const fs = require("fs");
   const orig = JSON.parse(fs.readFileSync("package.json", "utf8"));
-  const thirdParty = {};
-  for (const [k, v] of Object.entries(orig.dependencies || {})) {
-    if (!k.startsWith("@usgcp/")) thirdParty[k] = v;
+  const stripUsGcp = (deps = {}) => Object.fromEntries(
+    Object.entries(deps).filter(([k]) => !k.startsWith("@usgcp/"))
+  );
+  const next = {
+    ...orig,
+    dependencies: stripUsGcp(orig.dependencies),
+  };
+  if (orig.optionalDependencies) {
+    next.optionalDependencies = stripUsGcp(orig.optionalDependencies);
   }
-  fs.writeFileSync("package.json", JSON.stringify({
-    name: orig.name,
-    version: orig.version,
-    private: true,
-    type: "module",
-    main: "./dist/index.js",
-    scripts: { start: "node ./dist/index.js" },
-    dependencies: thirdParty,
-  }, null, 2));
+  if (orig.devDependencies) {
+    next.devDependencies = stripUsGcp(orig.devDependencies);
+  }
+  if (orig.peerDependencies) {
+    next.peerDependencies = stripUsGcp(orig.peerDependencies);
+  }
+  fs.writeFileSync("package.json", JSON.stringify(next, null, 2) + "\n");
 '

@@ -49,10 +49,46 @@ resource "google_project_service" "identitytoolkit" {
   disable_on_destroy = false
 }
 
+resource "google_project_service" "secretmanager" {
+  project = var.project_id
+  service = "secretmanager.googleapis.com"
+
+  disable_on_destroy = false
+}
+
+# Dev-only smoke bypass. Value comes from tfvars (not committed); the
+# secret version lands in Terraform state — rotate via tfvars + apply.
+resource "google_secret_manager_secret" "smoke_test_key" {
+  project   = var.project_id
+  secret_id = "url-shortener-smoke-test-key"
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.secretmanager]
+}
+
+resource "google_secret_manager_secret_version" "smoke_test_key" {
+  secret      = google_secret_manager_secret.smoke_test_key.id
+  secret_data = var.smoke_test_key
+}
+
+locals {
+  smoke_test_secret_env = {
+    SMOKE_TEST_KEY = {
+      secret_name = google_secret_manager_secret.smoke_test_key.secret_id
+      version     = "latest"
+    }
+  }
+}
+
 # ----------------------------- app-bff -----------------------------
 # Owns /mappings in app-db Firestore. Has the Firestore→bus Eventarc
 # trigger (sole producer of mapping.created). Does NOT subscribe to
 # the bus.
+# Cloud Run is publicly invokable; Identity Platform JWT is verified
+# in the app handler (IAM cannot validate end-user JWTs).
 module "app_bff" {
   source     = "../../modules/bff-service"
   project_id = var.project_id
@@ -62,28 +98,24 @@ module "app_bff" {
 
   service_name          = "app-bff"
   image                 = var.app_bff_image
-  allow_unauthenticated = false
-  invoker_members       = ["user:andre.mashukov@gmail.com"]
+  allow_unauthenticated = true
 
   firestore_database_id          = "app-db"
   firestore_location             = var.region
   firestore_trigger_path_pattern = "mappings/{code}"
   enable_firestore_trigger       = true
 
-  events_topic_id              = module.event_hub.topic_id
-  events_topic_name            = module.event_hub.topic_name
-  dlq_topic_id                 = module.event_hub.dlq_topic_id
-  eventhub_publisher_sa_email  = module.event_hub.publisher_service_account_email
-  eventhub_subscriber_sa_email = module.event_hub.subscriber_service_account_email
-  subscribes_to_event_types    = [] # app-bff does not consume from the bus
+  events_topic_id           = module.event_hub.topic_id
+  events_topic_name         = module.event_hub.topic_name
+  subscribes_to_event_types = [] # app-bff does not consume from the bus
 
   env_vars = merge(var.common_env_vars, {
     SERVICE_NAME   = "app-bff"
     EVENTHUB_TOPIC = module.event_hub.topic_name
     GCP_PROJECT_ID = var.project_id
     GCP_REGION     = var.region
-    SMOKE_TEST_KEY = var.smoke_test_key
   })
+  secret_env_vars = local.smoke_test_secret_env
 
   deletion_protection = false
 }
@@ -107,27 +139,26 @@ module "redirect_bff" {
   firestore_location       = var.region
   enable_firestore_trigger = false
 
-  events_topic_id              = module.event_hub.topic_id
-  events_topic_name            = module.event_hub.topic_name
-  dlq_topic_id                 = module.event_hub.dlq_topic_id
-  eventhub_publisher_sa_email  = module.event_hub.publisher_service_account_email
-  eventhub_subscriber_sa_email = module.event_hub.subscriber_service_account_email
-  subscribes_to_event_types    = ["mapping.created"]
+  events_topic_id           = module.event_hub.topic_id
+  events_topic_name         = module.event_hub.topic_name
+  subscribes_to_event_types = ["mapping.created"]
 
   env_vars = merge(var.common_env_vars, {
     SERVICE_NAME   = "redirect-bff"
     EVENTHUB_TOPIC = module.event_hub.topic_name
     GCP_PROJECT_ID = var.project_id
     GCP_REGION     = var.region
-    SMOKE_TEST_KEY = var.smoke_test_key
   })
+  secret_env_vars = local.smoke_test_secret_env
 
   deletion_protection = false
 }
+
 # Owns /clicks in analytics-db. Subscribes to click.recorded only
 # (seed-on-first-click; ignores mapping.created). Reads ONLY
 # analytics-db (ownerUid denormalized onto the clicks doc).
-# Authenticated, owner-only on GET /analytics/{code}; 404 until first click.
+# Public Cloud Run invoke; owner JWT checked in the handler.
+# GET /analytics/{code} → 404 until first click.
 module "analytics_bff" {
   source     = "../../modules/bff-service"
   project_id = var.project_id
@@ -137,27 +168,23 @@ module "analytics_bff" {
 
   service_name          = "analytics-bff"
   image                 = var.analytics_bff_image
-  allow_unauthenticated = false
-  invoker_members       = ["user:andre.mashukov@gmail.com"]
+  allow_unauthenticated = true
 
   firestore_database_id    = "analytics-db"
   firestore_location       = var.region
   enable_firestore_trigger = false
 
-  events_topic_id              = module.event_hub.topic_id
-  events_topic_name            = module.event_hub.topic_name
-  dlq_topic_id                 = module.event_hub.dlq_topic_id
-  eventhub_publisher_sa_email  = module.event_hub.publisher_service_account_email
-  eventhub_subscriber_sa_email = module.event_hub.subscriber_service_account_email
-  subscribes_to_event_types    = ["click.recorded"]
+  events_topic_id           = module.event_hub.topic_id
+  events_topic_name         = module.event_hub.topic_name
+  subscribes_to_event_types = ["click.recorded"]
 
   env_vars = merge(var.common_env_vars, {
     SERVICE_NAME   = "analytics-bff"
     EVENTHUB_TOPIC = module.event_hub.topic_name
     GCP_PROJECT_ID = var.project_id
     GCP_REGION     = var.region
-    SMOKE_TEST_KEY = var.smoke_test_key
   })
+  secret_env_vars = local.smoke_test_secret_env
 
   deletion_protection = false
 }
