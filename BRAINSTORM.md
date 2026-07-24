@@ -169,8 +169,9 @@ url-shortener-app-gcp/
   `type=google.cloud.firestore.document.v1.created`,
   `database=app-db`, path-pattern `document=mappings/{code}`.
   Trigger location must be `asia-southeast1` (same as the DB).
-  Event data is **protobuf** (`application/protobuf`
-  `DocumentEventData`) — decode in `libs/`, not JSON snapshots.
+  Event data is **protobuf** DocumentEventData delivered to Cloud Run in
+  CloudEvents binary mode (`ce-*` headers + `application/protobuf` body).
+  Decode via `libs/proto-decode` (protobufjs). Do not UTF-8-decode the body.
   IAM: Eventarc SA needs `roles/eventarc.eventReceiver` +
   `roles/run.invoker` on the publisher service; attach a DLQ on
   the Eventarc transport subscription.

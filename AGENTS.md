@@ -112,8 +112,9 @@ bash /shared/infra/gcp/scripts/gcp-run-status.sh dev
 - **Idempotency on `eventId`.** All Pub/Sub handlers are
   at-least-once. Use the Firestore document path or the eventId
   as the natural idempotency key.
-- **Eventarc payloads are protobuf.** Use `libs/proto-decode` —
-  do not hand-roll decode.
+- **Eventarc Firestore payloads are protobuf DocumentEventData**,
+  delivered in CloudEvents binary mode (`ce-*` headers + raw body).
+  Decode with `libs/proto-decode`; never `JSON.parse` / `text()` the body.
 
 ## Repo layout
 

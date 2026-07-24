@@ -19,6 +19,7 @@ import { getFirestore, createDoc, isAlreadyExistsError } from '@usgcp/firestore'
 import { resolveUid } from '@usgcp/auth';
 import { publishEvent } from '@usgcp/pubsub';
 import { errorResponse, jsonError } from '@usgcp/http';
+import { decodeDocumentEventDataBytes } from '@usgcp/proto-decode';
 import { z } from 'zod';
 
 const projectId = process.env.GCP_PROJECT_ID ?? process.env.GOOGLE_CLOUD_PROJECT ?? '';
@@ -104,19 +105,9 @@ app.post('/shorten', async (c) => {
     throw err;
   }
 
-  // 5. Also publish mapping.created directly. The Eventarc Firestore
-  //    trigger should be the sole producer (per BRAINSTORM §1), but
-  //    for v1 / smoke test we publish here as a fallback so the
-  //    bus pipeline works end-to-end. To be removed once the
-  //    Firestore trigger's protobuf payload is decoded in
-  //    __eventarc/publish.
-  await publishEvent({
-    topicName,
-    eventId: `mapping-${code}-${Date.now()}`,
-    type: 'mapping.created',
-    data: { code, longUrl: body.longUrl, ownerUid: uid, createdAt: new Date().toISOString() },
-  });
-
+  // Command leg only: authoritative Firestore write. mapping.created is
+  // published solely by the Firestore Eventarc trigger leg
+  // (POST /__eventarc/publish) — database-first CDC, not dual publish.
   return c.json({ code, longUrl: body.longUrl, ownerUid: uid }, 201);
 });
 
@@ -137,21 +128,114 @@ app.get('/me/urls', async (c) => {
   return c.json({ urls });
 });
 
-// POST /__eventarc/publish — Firestore Eventarc trigger receiver
-//
-// Eventarc pushes CloudEvents in protobuf format (DocumentEventData).
-// For v1 we accept the JSON-encoded CloudEvent that Eventarc also
-// supports (when `event_data_content_type` is set to application/json
-// or when the push body is JSON-compatible).
-//
-// The CloudEvent body has:
-//   - type: google.cloud.firestore.document.v1.created
-//   - source: /firestore/{database}/documents/{path}
-//   - data: { value: { fields: {...} } }  (Firestore document fields)
-//   - subject: document path
-//
-// We publish a normalized mapping.created to the bus.
+type TriggerResult =
+  | { ack: true; published: 'mapping.created'; code: string; eventId: string }
+  | { ack: true; ignored: string; fields?: string[] };
+
+function mappingCodeFromSubject(subject: string): string | null {
+  // Eventarc subjects observed/docs vary:
+  //   documents/mappings/{code}
+  //   projects/.../databases/.../documents/mappings/{code}
+  //   mappings/{code}
+  const markers = ['/mappings/', 'mappings/'];
+  for (const marker of markers) {
+    const idx = subject.lastIndexOf(marker);
+    if (idx >= 0) {
+      const code = subject.slice(idx + marker.length).split('/').filter(Boolean)[0];
+      if (code) return code;
+    }
+  }
+  return null;
+}
+
+async function publishMappingCreated(opts: {
+  eventId: string;
+  code: string;
+  longUrl: string;
+  ownerUid: string;
+  createdAt: string;
+}): Promise<TriggerResult> {
+  await publishEvent({
+    topicName,
+    eventId: opts.eventId,
+    type: 'mapping.created',
+    data: {
+      code: opts.code,
+      longUrl: opts.longUrl,
+      ownerUid: opts.ownerUid,
+      createdAt: opts.createdAt,
+    },
+  });
+  return {
+    ack: true,
+    published: 'mapping.created',
+    code: opts.code,
+    eventId: opts.eventId,
+  };
+}
+
+/**
+ * Trigger leg: Firestore CDC (Eventarc) → mapping.created on the bus.
+ * Live delivery is CloudEvents binary mode:
+ *   ce-* headers + application/protobuf DocumentEventData body.
+ */
+async function handleFirestoreCreatedFromProtobuf(opts: {
+  eventId?: string;
+  ceType?: string;
+  subject?: string;
+  body: Uint8Array;
+}): Promise<TriggerResult> {
+  const ceType = opts.ceType ?? '';
+  if (ceType && ceType !== 'google.cloud.firestore.document.v1.created') {
+    return { ack: true, ignored: ceType };
+  }
+
+  let decoded;
+  try {
+    decoded = decodeDocumentEventDataBytes(opts.body);
+  } catch (err) {
+    console.error('[app-bff] protobuf-decode-failed', String(err));
+    return { ack: true, ignored: 'protobuf-decode-failed' };
+  }
+
+  const subject = opts.subject || decoded.document.name;
+  const code = mappingCodeFromSubject(subject) ?? mappingCodeFromSubject(decoded.path) ?? '';
+  if (!code) {
+    return { ack: true, ignored: subject ? `no-mapping:${subject}` : 'no-code' };
+  }
+
+  const fields = decoded.document.fields;
+  const longUrl = fields.longUrl?.stringValue ?? '';
+  const ownerUid = fields.ownerUid?.stringValue ?? '';
+  const createdAt =
+    fields.createdAt?.stringValue ??
+    fields.createdAt?.timestampValue ??
+    decoded.document.createTime ??
+    new Date().toISOString();
+
+  if (!longUrl || !ownerUid) {
+    return { ack: true, ignored: 'missing-fields', fields: Object.keys(fields) };
+  }
+
+  const eventId = opts.eventId ?? `evt-${code}-${createdAt}`;
+  return publishMappingCreated({ eventId, code, longUrl, ownerUid, createdAt });
+}
+
+// POST /__eventarc/publish — manual/JSON path for fixtures & local tests.
 app.post('/__eventarc/publish', async (c) => {
+  const contentType = c.req.header('content-type') ?? '';
+  if (contentType.includes('protobuf') || contentType.includes('octet-stream')) {
+    const body = new Uint8Array(await c.req.arrayBuffer());
+    const result = await handleFirestoreCreatedFromProtobuf({
+      eventId: c.req.header('ce-id') ?? undefined,
+      ceType: c.req.header('ce-type') ?? 'google.cloud.firestore.document.v1.created',
+      subject: c.req.header('ce-subject') ?? undefined,
+      body,
+    });
+    console.log('[app-bff] firestore-trigger', JSON.stringify(result));
+    return c.json(result, 200);
+  }
+
   let body: any;
   try {
     body = await c.req.json();
@@ -159,66 +243,70 @@ app.post('/__eventarc/publish', async (c) => {
     return errorResponse(400, 'invalid_json', String(err));
   }
 
-  const ceType = body.type ?? '';
-  const subject = body.subject ?? '';
-  const data = body.data ?? {};
-
-  // Only handle document-created events on mappings/{code}
+  // Accept either a CloudEvent JSON envelope or a raw DocumentEventData JSON view.
+  const ceType = body.type ?? 'google.cloud.firestore.document.v1.created';
+  const subject = body.subject ?? body.data?.value?.name ?? body.value?.name ?? '';
   if (ceType !== 'google.cloud.firestore.document.v1.created') {
     return c.json({ ack: true, ignored: ceType }, 200);
   }
-  if (!subject.includes('/mappings/')) {
-    return c.json({ ack: true, ignored: subject }, 200);
-  }
-
-  // Extract the code from the subject
-  const code = subject.split('/mappings/').pop() ?? '';
+  const code = mappingCodeFromSubject(subject);
   if (!code) {
-    return c.json({ ack: true, ignored: 'no-code' }, 200);
+    return c.json({ ack: true, ignored: subject ? `no-mapping:${subject}` : 'no-subject' }, 200);
   }
-
-  // Extract fields from the Firestore document value
-  const fields = data.value?.fields ?? {};
+  const fields = body.data?.value?.fields ?? body.value?.fields ?? {};
   const longUrl = fields.longUrl?.stringValue ?? '';
   const ownerUid = fields.ownerUid?.stringValue ?? '';
-  const createdAt = fields.createdAt?.timestampValue ?? new Date().toISOString();
-
+  const createdAt =
+    fields.createdAt?.stringValue ??
+    fields.createdAt?.timestampValue ??
+    new Date().toISOString();
   if (!longUrl || !ownerUid) {
     return c.json({ ack: true, ignored: 'missing-fields', fields: Object.keys(fields) }, 200);
   }
-
-  // Publish to the bus. Use the CloudEvent id as the idempotency key.
   const eventId = body.id ?? `evt-${code}-${createdAt}`;
-  await publishEvent({
-    topicName,
-    eventId,
-    type: 'mapping.created',
-    data: { code, longUrl, ownerUid, createdAt },
-  });
-
-  return c.json({ ack: true, published: 'mapping.created', code, eventId }, 200);
+  const result = await publishMappingCreated({ eventId, code, longUrl, ownerUid, createdAt });
+  console.log('[app-bff] firestore-trigger', JSON.stringify(result));
+  return c.json(result, 200);
 });
 
-// Catch-all for Eventarc pushes (CE_PUBSUB_BINDING path) — same as
-// POST /__eventarc/publish. The Eventarc Firestore trigger pushes to
-// the root URL with ?__GCP_CloudEventsMode=CE_PUBSUB_BINDING. We
-// delegate to the named handler so the protobuf/JSON payload is
-// processed exactly once.
+// Catch-all for Eventarc CloudEvents binary / CE_PUBSUB_BINDING pushes to `/`.
 app.post('/', async (c) => {
-  // Eventarc often strips __GCP_CloudEventsMode from the URL seen by Hono.
-  // Detect CloudEvent / Firestore payloads by body instead of the query flag.
-  const bodyText = await c.req.text();
-  const looksLikeEvent = bodyText.includes('"type"') || bodyText.includes('"message"');
-  if (!looksLikeEvent && !c.req.query('__GCP_CloudEventsMode')) {
-    return c.json({ ack: true, ignored: 'not-eventarc' }, 200);
+  const contentType = c.req.header('content-type') ?? '';
+  const ceHeaders = {
+    id: c.req.header('ce-id') ?? c.req.header('Ce-Id') ?? undefined,
+    type: c.req.header('ce-type') ?? c.req.header('Ce-Type') ?? undefined,
+    subject: c.req.header('ce-subject') ?? c.req.header('Ce-Subject') ?? undefined,
+  };
+  const isEventarc =
+    Boolean(ceHeaders.type) ||
+    contentType.includes('protobuf') ||
+    Boolean(c.req.query('__GCP_CloudEventsMode'));
+
+  // Read raw bytes once. Never probe with text() first — Hono would rebuild
+  // a later arrayBuffer() from UTF-8-cached text and corrupt protobuf.
+  const body = new Uint8Array(await c.req.arrayBuffer());
+
+  if (!isEventarc) {
+    const probe = Buffer.from(body).toString('utf8');
+    if (!(probe.includes('"message"') || probe.includes('"attributes"'))) {
+      return c.json({ ack: true, ignored: 'not-eventarc' }, 200);
+    }
   }
-  return app.fetch(new Request('http://x/__eventarc/publish', {
-    method: 'POST',
-    headers: {
-      'content-type': c.req.header('content-type') ?? 'application/json',
-    },
-    body: bodyText,
+
+  console.log('[app-bff] eventarc-body', JSON.stringify({
+    len: body.byteLength,
+    contentType,
+    ceHeaders,
   }));
+
+  const result = await handleFirestoreCreatedFromProtobuf({
+    eventId: ceHeaders.id,
+    ceType: ceHeaders.type,
+    subject: ceHeaders.subject,
+    body,
+  });
+  console.log('[app-bff] eventarc', JSON.stringify(result));
+  return c.json(result, 200);
 });
 
 app.onError((err, c) => jsonError(err));
