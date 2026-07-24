@@ -132,9 +132,9 @@ url-shortener-app-gcp/
 │   └── scripts/           # plan-gate wrappers, smoke helpers
 ├── apps/
 │   ├── event-hub/         # placeholder: bus-only, no app code
-│   ├── app-bff/           # POST /shorten, GET /me/urls
-│   ├── redirect-bff/      # GET /{code} -> 302
-│   └── analytics-bff/     # GET /analytics/{code} (auth, owner-only)
+│   ├── app-bff/           # command + trigger (CDC → mapping.created)
+│   ├── redirect-bff/      # command + listener (mapping.created → lean_view)
+│   └── analytics-bff/     # command + listener (click.recorded → clicks)
 ├── libs/
 │   ├── events/            # zod schemas for event payloads
 │   ├── auth/              # Identity Platform JWT verify middleware
