@@ -10,5 +10,8 @@
   },
   "scripts": {
     "build": "tsc -p ."
+  },
+  "dependencies": {
+    "protobufjs": "^7.6.5"
   }
 }

@@ -273,8 +273,8 @@ resource "google_project_iam_member" "runtime_secret_accessor" {
 
 # Pub/Sub publisher on the runtime SA:
 #   - redirect-bff: click.recorded from the HTTP handler (documented exception)
-#   - app-bff: mapping.created from the Firestore Eventarc handler (and the
-#     temporary HTTP fallback publish until the trigger path is sole-source)
+#   - app-bff: mapping.created from the Firestore Eventarc trigger leg only
+#     (POST /__eventarc/publish; /shorten never publishes)
 # Analytics-bff never publishes.
 resource "google_project_iam_member" "runtime_pubsub_publisher" {
   count   = contains(["redirect-bff", "app-bff"], var.service_name) ? 1 : 0
@@ -487,9 +487,9 @@ resource "google_eventarc_trigger" "firestore" {
 
   service_account = google_service_account.eventarc.email
 
-  # Eventarc Firestore triggers push protobuf (DocumentEventData).
-  # The app-bff handler decodes the base64-encoded `data` field with
-  # protobufjs + a hand-written DocumentEventData schema.
+  # Eventarc Firestore → Cloud Run delivers CloudEvents binary mode:
+  # ce-* headers + application/protobuf DocumentEventData body.
+  # (application/json is advertised by the API but Cloud Run still receives protobuf.)
   event_data_content_type = "application/protobuf"
 
   labels = local.labels

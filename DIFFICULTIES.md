@@ -142,6 +142,27 @@ APIs take time to propagate. IAM takes time to propagate. Eventarc takes time to
 
 After a few delivery failures (e.g. 401 from missing OIDC), the Eventarc transport subscription stops re-delivering. There is no admin command to "reset" the backoff. The only way out is to delete and recreate the trigger (or wait for the exponential backoff to cap at 600s and try again).
 
+### 23. Dual-publish hid a broken Firestore trigger leg
+
+`/shorten` temporarily published `mapping.created` directly while the
+Firestore Eventarc trigger also POSTed to app-bff. Smoke tests looked green
+because the HTTP path filled lean_view. After removing the dual publish
+(book: command leg writes DB; trigger leg emits domain event), redirect
+stayed 404.
+
+Root causes found when the fallback was removed:
+1. Trigger *does* fire (`POST /?__GCP_CloudEventsMode=...` → 200) but
+   delivery is CloudEvents **binary mode**: `ce-*` headers +
+   `Content-Type: application/protobuf` raw `DocumentEventData` body.
+   Treating it as JSON / UTF-8 text silently yields `missing-fields`.
+2. `usgcp-app-bff-runtime` lacked `roles/pubsub.publisher` in the live
+   project (terraform binding existed but was not applied), so even a
+   correct decode would fail publish with PERMISSION_DENIED.
+
+**Fix:** decode protobuf via `libs/proto-decode` (read `arrayBuffer()`,
+not `text()`); grant runtime SA `roles/pubsub.publisher`; keep CloudEvent
+`id` as the sole-producer event id.
+
 ## What I would do differently next time
 
 - Pre-warm the region first before the first real apply.
