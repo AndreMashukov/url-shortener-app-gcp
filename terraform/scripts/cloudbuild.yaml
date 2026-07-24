@@ -1,0 +1,14 @@
+steps:
+- name: gcr.io/cloud-builders/docker
+  args:
+  - build
+  - --tag=asia-southeast1-docker.pkg.dev/serverless-503308/url-shortener-apps-dev/${_APP_NAME}:latest
+  - -f
+  - apps/${_APP_NAME}/Dockerfile
+  - .
+images:
+- asia-southeast1-docker.pkg.dev/serverless-503308/url-shortener-apps-dev/${_APP_NAME}:latest
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8
+  diskSizeGb: 50

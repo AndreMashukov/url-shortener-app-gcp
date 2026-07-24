@@ -12,18 +12,19 @@ build/
 
 # Terraform
 terraform/**/.terraform/
-terraform/**/.terraform.lock.hcl
 terraform/**/*.tfstate
 terraform/**/*.tfstate.*
 terraform/**/*.tfvars
 terraform/**/.terraform.tfstate.lock.info
 terraform/**/plan.tfplan
 terraform/**/plan.tfplan.json
+terraform/**/*.plan.txt
 terraform/.terraform.d/
 *.tfplan
 *.tfplan.json
 crash.log
 crash.*.log
+# Provider pins are tracked; keep runtime dirs/state/tfvars ignored above.
 
 # Environment / secrets
 .env

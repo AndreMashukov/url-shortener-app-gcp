@@ -1,0 +1,18 @@
+# Copy to terraform.tfvars (gitignored) and fill in real values.
+project_id = "serverless-503308"
+region     = "asia-southeast1"
+env        = "dev"
+
+artifact_registry_repo = "url-shortener-apps-dev"
+
+app_bff_image       = "asia-southeast1-docker.pkg.dev/serverless-503308/url-shortener-apps-dev/app-bff:latest"
+redirect_bff_image  = "asia-southeast1-docker.pkg.dev/serverless-503308/url-shortener-apps-dev/redirect-bff:latest"
+analytics_bff_image = "asia-southeast1-docker.pkg.dev/serverless-503308/url-shortener-apps-dev/analytics-bff:latest"
+
+common_env_vars = {
+  ENV    = "dev"
+  REGION = "asia-southeast1"
+}
+
+# Required for dev smoke bypass. Rotate after any leak; never commit.
+smoke_test_key = "replace-me-with-a-long-random-string"
