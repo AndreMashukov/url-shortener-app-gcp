@@ -23,20 +23,21 @@ ENV PORT=8080
 
 # 1) Install 3rd-party deps FIRST. Strip @usgcp/* (file:..) from package.json
 #    so npm install doesn't try to resolve workspace siblings.
-COPY --from=builder /workspace/apps/redirect-bff/package.json /app/package.json
+COPY --chown=node:node --from=builder /workspace/apps/redirect-bff/package.json /app/package.json
 COPY terraform/scripts/strip-usgcp-deps.sh /tmp/strip-usgcp-deps.sh
 RUN sh /tmp/strip-usgcp-deps.sh && \
     npm install --omit=dev --ignore-scripts --no-audit --no-fund
 
 # 2) THEN vendor the @usgcp/* workspace libs into node_modules.
-#    Each lib's own package.json has main: ./dist/index.js.
 RUN mkdir -p /app/node_modules/@usgcp
-COPY --from=builder /workspace/libs/events       /app/node_modules/@usgcp/events
-COPY --from=builder /workspace/libs/firestore    /app/node_modules/@usgcp/firestore
-COPY --from=builder /workspace/libs/pubsub       /app/node_modules/@usgcp/pubsub
-COPY --from=builder /workspace/libs/http         /app/node_modules/@usgcp/http
-COPY --from=builder /workspace/libs/proto-decode /app/node_modules/@usgcp/proto-decode
+COPY --chown=node:node --from=builder /workspace/libs/events       /app/node_modules/@usgcp/events
+COPY --chown=node:node --from=builder /workspace/libs/firestore    /app/node_modules/@usgcp/firestore
+COPY --chown=node:node --from=builder /workspace/libs/pubsub       /app/node_modules/@usgcp/pubsub
+COPY --chown=node:node --from=builder /workspace/libs/http         /app/node_modules/@usgcp/http
+COPY --chown=node:node --from=builder /workspace/libs/proto-decode /app/node_modules/@usgcp/proto-decode
 
-# 3) Copy the compiled app last.
-COPY --from=builder /workspace/apps/redirect-bff/dist ./dist
+# 3) Copy the compiled app last; drop privileges for runtime.
+COPY --chown=node:node --from=builder /workspace/apps/redirect-bff/dist ./dist
+RUN chown -R node:node /app
+USER node
 CMD ["node", "./dist/index.js"]

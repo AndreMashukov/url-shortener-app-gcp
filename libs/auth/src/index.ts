@@ -41,10 +41,15 @@ export interface AuthClaims extends JWTPayload {
 /**
  * If SMOKE_TEST_KEY is set and the X-Smoke-Test header matches it,
  * return the fixed smoke uid. Otherwise return null (caller must JWT-verify).
+ * Inert when ENV/NODE_ENV is production — defense in depth if the secret
+ * is accidentally left on a prod revision.
  */
 export function uidFromSmokeHeader(header: string | undefined): string | null {
   const key = process.env.SMOKE_TEST_KEY;
   if (!key || !header) return null;
+  if (process.env.ENV === 'production' || process.env.NODE_ENV === 'production') {
+    return null;
+  }
   if (header === key) return SMOKE_TEST_UID;
   return null;
 }
