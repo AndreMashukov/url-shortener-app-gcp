@@ -26,9 +26,21 @@ event-sourced / CQRS shape, ported to Google Cloud.
 
 ## Commands
 
+Nx 23 workspace (StudyForge-style `project.json` per app/lib). Prefer `nx`
+targets over ad-hoc scripts.
+
 ```bash
 npm install
-npm run typecheck
+npx nx show projects
+npx nx run-many -t build
+npx nx run-many -t typecheck
+
+# Deploy BFFs (Cloud Build → Artifact Registry → Cloud Run digest pin)
+npx nx run app-bff:deploy
+npx nx run redirect-bff:deploy
+npx nx run analytics-bff:deploy
+# or: npx nx run-many -t deploy -p app-bff,redirect-bff,analytics-bff --parallel=1
+
 npm run test
 
 # Terraform (per-env)
@@ -38,6 +50,11 @@ terraform plan -input=false -out=./dev.tfplan
 # STOP — ask for approval
 terraform apply -input=false ./dev.tfplan
 ```
+
+**Nx + Hermes note:** `node_modules` is shared via the Docker mount. Nx’s
+native binary is platform-specific — run `nx` on the host (darwin) when the
+Hermes linux/amd64 container reports `WorkspaceContext is not a constructor`.
+Deploy still uses host `gcloud` + ADC (`GOOGLE_APPLICATION_CREDENTIALS`).
 
 ## IaC: Terraform (per the gcp-terraform-cloud-run skill)
 

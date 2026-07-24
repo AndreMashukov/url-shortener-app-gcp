@@ -18,11 +18,8 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "outDir": "./dist",
-    "rootDir": "./",
     "composite": true,
-    "incremental": true,
-    "tsBuildInfoFile": "./.tsbuildinfo"
+    "incremental": true
   },
   "exclude": ["node_modules", "dist", "**/.terraform", "**/node_modules"]
 }
