@@ -282,17 +282,17 @@ app.post('/', async (c) => {
     contentType.includes('protobuf') ||
     Boolean(c.req.query('__GCP_CloudEventsMode'));
 
+  // Read raw bytes once. Never probe with text() first — Hono would rebuild
+  // a later arrayBuffer() from UTF-8-cached text and corrupt protobuf.
+  const body = new Uint8Array(await c.req.arrayBuffer());
+
   if (!isEventarc) {
-    // Keep a cheap probe for non-event POSTs to `/`.
-    const probe = await c.req.text();
+    const probe = Buffer.from(body).toString('utf8');
     if (!(probe.includes('"message"') || probe.includes('"attributes"'))) {
       return c.json({ ack: true, ignored: 'not-eventarc' }, 200);
     }
   }
 
-  // Firestore Eventarc → Cloud Run uses binary CloudEvents: protobuf body + ce-* headers.
-  // Do NOT read as text first — UTF-8 decoding corrupts protobuf wire bytes.
-  const body = new Uint8Array(await c.req.arrayBuffer());
   console.log('[app-bff] eventarc-body', JSON.stringify({
     len: body.byteLength,
     contentType,

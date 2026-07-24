@@ -48,14 +48,15 @@ const root = protobuf.Root.fromJSON({
                     },
                   },
                   fields: {
-                    nullValue: { type: 'int32', id: 1 },
-                    booleanValue: { type: 'bool', id: 2 },
-                    integerValue: { type: 'int64', id: 3 },
-                    doubleValue: { type: 'double', id: 4 },
+                    // IDs must match google.firestore.v1.Value exactly.
+                    booleanValue: { type: 'bool', id: 1 },
+                    integerValue: { type: 'int64', id: 2 },
+                    doubleValue: { type: 'double', id: 3 },
+                    referenceValue: { type: 'string', id: 5 },
                     timestampValue: { type: 'google.protobuf.Timestamp', id: 10 },
+                    nullValue: { type: 'int32', id: 11 },
                     stringValue: { type: 'string', id: 17 },
                     bytesValue: { type: 'bytes', id: 18 },
-                    referenceValue: { type: 'string', id: 21 },
                   },
                 },
                 Document: {
